@@ -854,6 +854,30 @@
     </div>
   </div>
 
+  <!-- Reset Week Modal -->
+  <div class="modal-overlay hidden" id="resetModal">
+    <div class="modal">
+      <h2>🔄 Reset for New Week</h2>
+      <p style="color: var(--text-muted); margin-bottom: 20px;">This will clear all picks and submissions from JSONBin. Make sure you've downloaded the JSON for the current week first!</p>
+      
+      <div style="text-align: left; margin-bottom: 20px;">
+        <label style="display: block; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 8px;">New Week Number</label>
+        <input type="number" id="newWeekInput" min="1" max="22" placeholder="e.g., 2" style="width: 100%; padding: 14px 16px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 1.2rem; text-align: center;">
+      </div>
+      
+      <div class="alert info" style="text-align: left; margin-bottom: 20px;">
+        <strong>⚠️ Remember:</strong> After resetting, you still need to update the CONFIG in both HTML files with the new week number, deadline, and games.
+      </div>
+      
+      <div style="display: flex; gap: 12px;">
+        <button class="btn btn-secondary" id="cancelResetBtn" style="flex: 1;">Cancel</button>
+        <button class="btn btn-danger" id="confirmResetBtn" style="flex: 1;">Reset & Clear</button>
+      </div>
+      
+      <div id="resetMessage" style="margin-top: 16px; display: none;"></div>
+    </div>
+  </div>
+
   
 
   <div class="container" id="mainContent" style="display: none;">
@@ -870,6 +894,7 @@
         <button class="btn btn-secondary" id="refreshBtn">↻ Refresh</button>
         <button class="btn btn-secondary" id="fetchScoresBtn">🔄 Fetch Live Scores</button>
         <button class="btn btn-primary" id="downloadJsonBtn">⬇ Download JSON</button>
+        <button class="btn btn-danger" id="resetWeekBtn">🔄 Reset for New Week</button>
       </div>
     </header>
 
@@ -1006,7 +1031,7 @@
       ADMIN_PIN: '292292',
       
       // Current week
-      WEEK: 1,
+      WEEK: 17,
       
       // All players (in order for table)
       PLAYERS: ['matt', 'jarv', 'gaz', 'joe', 'ben', 'coley', 'mark', 'ste', 'tony', 'jay', 'lee', 'liam'],
@@ -1583,6 +1608,88 @@
     document.getElementById('downloadJsonBtn').addEventListener('click', downloadJson);
     document.getElementById('clearWinnersBtn').addEventListener('click', clearAllWinners);
     document.getElementById('clearWinnersBtn2').addEventListener('click', clearAllWinners);
+
+    // Reset Week Modal
+    document.getElementById('resetWeekBtn').addEventListener('click', openResetModal);
+    document.getElementById('cancelResetBtn').addEventListener('click', closeResetModal);
+    document.getElementById('confirmResetBtn').addEventListener('click', confirmReset);
+    document.getElementById('resetModal').addEventListener('click', (e) => {
+      if (e.target.id === 'resetModal') closeResetModal();
+    });
+
+    function openResetModal() {
+      document.getElementById('newWeekInput').value = CONFIG.WEEK + 1;
+      document.getElementById('resetMessage').style.display = 'none';
+      document.getElementById('resetModal').classList.remove('hidden');
+    }
+
+    function closeResetModal() {
+      document.getElementById('resetModal').classList.add('hidden');
+    }
+
+    async function confirmReset() {
+      const newWeek = parseInt(document.getElementById('newWeekInput').value);
+      const messageEl = document.getElementById('resetMessage');
+      const confirmBtn = document.getElementById('confirmResetBtn');
+
+      if (!newWeek || newWeek < 1) {
+        messageEl.textContent = '❌ Please enter a valid week number';
+        messageEl.style.display = 'block';
+        messageEl.style.color = 'var(--red)';
+        return;
+      }
+
+      // Double confirm
+      if (!confirm(`Are you sure you want to reset for Week ${newWeek}? This will DELETE all current picks and submissions!`)) {
+        return;
+      }
+
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Resetting...';
+
+      try {
+        const newData = {
+          week: newWeek,
+          picks: {},
+          submissions: []
+        };
+
+        const response = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.JSONBIN_BIN_ID}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Access-Key': CONFIG.JSONBIN_API_KEY
+          },
+          body: JSON.stringify(newData)
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to update JSONBin');
+        }
+
+        // Clear local winners storage for old week
+        localStorage.removeItem(`nfl_winners_week_${CONFIG.WEEK}`);
+
+        messageEl.innerHTML = `✅ <strong>Reset successful!</strong><br><br>JSONBin cleared for Week ${newWeek}.<br><br>Now update CONFIG in both HTML files with:<br>• WEEK: ${newWeek}<br>• New DEADLINE<br>• New GAMES array`;
+        messageEl.style.display = 'block';
+        messageEl.style.color = 'var(--green)';
+        
+        confirmBtn.textContent = 'Done!';
+        
+        // Reload data after short delay
+        setTimeout(() => {
+          loadData();
+        }, 1000);
+
+      } catch (err) {
+        console.error('Reset error:', err);
+        messageEl.textContent = '❌ Error resetting: ' + err.message;
+        messageEl.style.display = 'block';
+        messageEl.style.color = 'var(--red)';
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Reset & Clear';
+      }
+    }
 
     // Collapsible Games Section
     document.getElementById('gamesToggle').addEventListener('click', toggleGamesSection);
