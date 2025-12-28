@@ -985,12 +985,31 @@
         <!-- Export Tabs -->
         <div class="card">
           <div class="tabs">
-            <button class="tab active" data-tab="json">Final JSON</button>
+            <button class="tab active" data-tab="league">League Table</button>
+            <button class="tab" data-tab="json">Full JSON</button>
             <button class="tab" data-tab="validator">Validator</button>
             <button class="tab" data-tab="whatsapp">WhatsApp</button>
           </div>
 
-          <div class="tab-content active" id="tab-json">
+          <div class="tab-content active" id="tab-league">
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 12px;">
+              Copy this line and paste it into your league table JSON
+            </p>
+            <div class="week-type-selector" style="margin-bottom: 12px;">
+              <label style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-bottom: 6px;">Week Type:</label>
+              <select id="weekTypeSelect" style="padding: 8px 12px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.85rem;">
+                <option value="normal">Normal Week (17, 18, etc.)</option>
+                <option value="thanksgiving">Thanksgiving (12.5)</option>
+                <option value="christmas">Christmas Day (16.5)</option>
+                <option value="custom">Custom Week Number</option>
+              </select>
+              <input type="text" id="customWeekInput" placeholder="e.g., 17 or 12.5" style="display: none; margin-top: 8px; padding: 8px 12px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.85rem; width: 150px;">
+            </div>
+            <textarea class="export-textarea" id="leagueExport" readonly style="height: 80px; font-size: 0.85rem;"></textarea>
+            <button class="btn btn-primary" style="margin-top: 12px; width: 100%;" id="copyLeagueBtn">Copy League Table Line</button>
+          </div>
+
+          <div class="tab-content" id="tab-json">
             <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 12px;">
               Complete JSON for your league table (includes winners)
             </p>
@@ -1032,6 +1051,9 @@
       
       // Current week
       WEEK: 17,
+      
+      // Bonus points for getting ALL games correct
+      FULL_HOUSE_BONUS: 2,
       
       // All players (in order for table)
       PLAYERS: ['matt', 'jarv', 'gaz', 'joe', 'ben', 'coley', 'mark', 'ste', 'tony', 'jay', 'lee', 'liam'],
@@ -1397,6 +1419,9 @@
       const header = document.getElementById('tableHeader');
       const body = document.getElementById('tableBody');
 
+      // Check if all games have winners (for full house calculation)
+      const allGamesDecided = CONFIG.GAMES.every((_, i) => winners[i]);
+
       // Build header
       let headerHtml = '<th>Player</th>';
       CONFIG.GAMES.forEach((game, i) => {
@@ -1416,6 +1441,7 @@
         const playerPicks = picksData.picks?.[player] || {};
         const pickCount = Object.keys(playerPicks).length;
         let points = 0;
+        let correctCount = 0;
 
         bodyHtml += '<tr>';
         bodyHtml += `<td class="player-name">${capitalize(player)}</td>`;
@@ -1431,19 +1457,32 @@
             bodyHtml += `<td class="pick-cell pending" title="${pick}">${getShortName(pick)}</td>`;
           } else if (pick === winner) {
             points += pts;
+            correctCount++;
             bodyHtml += `<td class="pick-cell correct" title="${pick}">✓ ${getShortName(pick)}</td>`;
           } else {
             bodyHtml += `<td class="pick-cell incorrect" title="${pick}">✗ ${getShortName(pick)}</td>`;
           }
         });
 
+        // Check for full house (all correct) - only if all games decided
+        const hasFullHouse = allGamesDecided && correctCount === CONFIG.GAMES.length;
+        if (hasFullHouse) {
+          points += CONFIG.FULL_HOUSE_BONUS;
+        }
+
         playerScores[player] = points;
 
-        // Points
-        bodyHtml += `<td class="points-cell">${points}</td>`;
+        // Points (with full house indicator)
+        if (hasFullHouse) {
+          bodyHtml += `<td class="points-cell" title="Includes +${CONFIG.FULL_HOUSE_BONUS} Full House bonus!">${points} 🎯</td>`;
+        } else {
+          bodyHtml += `<td class="points-cell">${points}</td>`;
+        }
 
         // Status
-        if (pickCount === CONFIG.GAMES.length) {
+        if (hasFullHouse) {
+          bodyHtml += `<td><span class="status-badge complete">🏆 FULL HOUSE</span></td>`;
+        } else if (pickCount === CONFIG.GAMES.length) {
           bodyHtml += `<td><span class="status-badge complete">✓</span></td>`;
         } else if (pickCount > 0) {
           bodyHtml += `<td><span class="status-badge partial">${pickCount}/${CONFIG.GAMES.length}</span></td>`;
@@ -1492,6 +1531,9 @@
     }
 
     function renderExports() {
+      // League Table Line Export (new!)
+      renderLeagueTableLine();
+
       // JSON Export (your final format)
       const jsonExport = buildFinalJson();
       document.getElementById('jsonExport').value = JSON.stringify(jsonExport, null, 2);
@@ -1528,6 +1570,59 @@
         if (game.doublePoints) wa += `(DOUBLE POINTS)\n`;
       });
       document.getElementById('whatsappOutput').textContent = wa.trim();
+    }
+
+    function renderLeagueTableLine() {
+      const weekType = document.getElementById('weekTypeSelect')?.value || 'normal';
+      const customWeek = document.getElementById('customWeekInput')?.value;
+      
+      let weekNumber;
+      if (weekType === 'thanksgiving') {
+        weekNumber = 12.5;
+      } else if (weekType === 'christmas') {
+        weekNumber = 16.5;
+      } else if (weekType === 'custom' && customWeek) {
+        weekNumber = parseFloat(customWeek) || CONFIG.WEEK;
+      } else {
+        weekNumber = CONFIG.WEEK;
+      }
+
+      // Calculate scores for each player
+      const allGamesDecided = CONFIG.GAMES.every((_, i) => winners[i]);
+      const picks = picksData.picks || {};
+      const scores = {};
+
+      CONFIG.PLAYERS.forEach(player => {
+        const playerPicks = picks[player] || {};
+        let points = 0;
+        let correctCount = 0;
+
+        CONFIG.GAMES.forEach((game, i) => {
+          const pick = playerPicks[i];
+          const winner = winners[i];
+          const pts = game.doublePoints ? 2 : 1;
+
+          if (pick && winner && pick === winner) {
+            points += pts;
+            correctCount++;
+          }
+        });
+
+        // Full house bonus
+        if (allGamesDecided && correctCount === CONFIG.GAMES.length) {
+          points += CONFIG.FULL_HOUSE_BONUS;
+        }
+
+        scores[player] = points;
+      });
+
+      // Build the line in your format
+      const line = {
+        week: weekNumber,
+        scores: scores
+      };
+
+      document.getElementById('leagueExport').value = JSON.stringify(line) + ',';
     }
 
     function buildFinalJson() {
@@ -1748,6 +1843,11 @@
       alert('JSON copied!');
     });
 
+    document.getElementById('copyLeagueBtn').addEventListener('click', () => {
+      copyToClipboard(document.getElementById('leagueExport').value);
+      alert('League table line copied!');
+    });
+
     document.getElementById('copyValidatorBtn').addEventListener('click', () => {
       copyToClipboard(document.getElementById('validatorExport').value);
       alert('Validator format copied!');
@@ -1756,6 +1856,22 @@
     document.getElementById('copyWhatsAppBtn').addEventListener('click', () => {
       copyToClipboard(document.getElementById('whatsappOutput').textContent);
       alert('WhatsApp format copied!');
+    });
+
+    // Week type selector
+    document.getElementById('weekTypeSelect').addEventListener('change', (e) => {
+      const customInput = document.getElementById('customWeekInput');
+      if (e.target.value === 'custom') {
+        customInput.style.display = 'block';
+        customInput.value = CONFIG.WEEK;
+      } else {
+        customInput.style.display = 'none';
+      }
+      renderLeagueTableLine();
+    });
+
+    document.getElementById('customWeekInput').addEventListener('input', () => {
+      renderLeagueTableLine();
     });
 
     // Tabs
