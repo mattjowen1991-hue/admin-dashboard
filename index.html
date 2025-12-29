@@ -878,6 +878,42 @@
     </div>
   </div>
 
+  <!-- Save to League Table Modal -->
+  <div class="modal-overlay hidden" id="saveLeagueModal">
+    <div class="modal" style="max-width: 500px;">
+      <h2>💾 Save to League Table</h2>
+      <p style="color: var(--text-muted); margin-bottom: 20px;">This will save Week ${CONFIG.WEEK} scores to your league table. The league table will update automatically.</p>
+      
+      <div style="text-align: left; margin-bottom: 16px;">
+        <label style="display: block; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 8px;">Week Number</label>
+        <select id="saveWeekType" style="width: 100%; padding: 12px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 1rem;">
+          <option value="normal">Normal Week (use CONFIG.WEEK)</option>
+          <option value="12.5">Thanksgiving (12.5)</option>
+          <option value="16.5">Christmas Day (16.5)</option>
+          <option value="custom">Custom Week Number</option>
+        </select>
+        <input type="text" id="saveCustomWeek" placeholder="e.g., 17 or 12.5" style="display: none; margin-top: 8px; width: 100%; padding: 12px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 1rem;">
+      </div>
+
+      <div id="savePreview" style="text-align: left; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 16px; font-family: monospace; font-size: 0.8rem; max-height: 150px; overflow: auto;">
+        <!-- Preview will be rendered here -->
+      </div>
+
+      <div class="alert info" style="text-align: left; margin-bottom: 20px; font-size: 0.85rem;">
+        <strong>What this saves:</strong><br>
+        • Week scores to <code>weeks</code> array<br>
+        • Perfect week points to <code>config.perfectWeekPoints</code>
+      </div>
+      
+      <div style="display: flex; gap: 12px;">
+        <button class="btn btn-secondary" id="cancelSaveLeagueBtn" style="flex: 1;">Cancel</button>
+        <button class="btn btn-primary" id="confirmSaveLeagueBtn" style="flex: 1;">Save to League</button>
+      </div>
+      
+      <div id="saveLeagueMessage" style="margin-top: 16px; display: none;"></div>
+    </div>
+  </div>
+
   
 
   <div class="container" id="mainContent" style="display: none;">
@@ -893,7 +929,8 @@
       <div class="header-actions">
         <button class="btn btn-secondary" id="refreshBtn">↻ Refresh</button>
         <button class="btn btn-secondary" id="fetchScoresBtn">🔄 Fetch Live Scores</button>
-        <button class="btn btn-primary" id="downloadJsonBtn">⬇ Download JSON</button>
+        <button class="btn btn-primary" id="saveToLeagueBtn">💾 Save to League Table</button>
+        <button class="btn btn-secondary" id="downloadJsonBtn">⬇ Download JSON</button>
         <button class="btn btn-danger" id="resetWeekBtn">🔄 Reset for New Week</button>
       </div>
     </header>
@@ -1042,9 +1079,13 @@
     // CONFIGURATION - MUST MATCH player-picks.html
     // ============================================
     const CONFIG = {
-      // JSONBin.io settings
+      // JSONBin.io settings - PICKS (resets weekly)
       JSONBIN_BIN_ID: '69487a81ae596e708fa937cb',
       JSONBIN_API_KEY: '$2a$10$C7BY0Kl0u74gNn/kXO7xNuayWv493/f1jAxlHUmx3ENADQKDii61C',
+      
+      // JSONBin.io settings - LEAGUE SCORES (permanent, never reset)
+      // Create a new bin at jsonbin.io and paste the ID here
+      SCORES_BIN_ID: 'YOUR_SCORES_BIN_ID_HERE',
       
       // Admin PIN
       ADMIN_PIN: '292292',
@@ -1711,6 +1752,181 @@
     document.getElementById('resetModal').addEventListener('click', (e) => {
       if (e.target.id === 'resetModal') closeResetModal();
     });
+
+    // Save to League Table Modal
+    document.getElementById('saveToLeagueBtn').addEventListener('click', openSaveLeagueModal);
+    document.getElementById('cancelSaveLeagueBtn').addEventListener('click', closeSaveLeagueModal);
+    document.getElementById('confirmSaveLeagueBtn').addEventListener('click', confirmSaveToLeague);
+    document.getElementById('saveLeagueModal').addEventListener('click', (e) => {
+      if (e.target.id === 'saveLeagueModal') closeSaveLeagueModal();
+    });
+    document.getElementById('saveWeekType').addEventListener('change', (e) => {
+      const customInput = document.getElementById('saveCustomWeek');
+      if (e.target.value === 'custom') {
+        customInput.style.display = 'block';
+        customInput.value = CONFIG.WEEK;
+      } else {
+        customInput.style.display = 'none';
+      }
+      updateSavePreview();
+    });
+    document.getElementById('saveCustomWeek').addEventListener('input', updateSavePreview);
+
+    function openSaveLeagueModal() {
+      document.getElementById('saveWeekType').value = 'normal';
+      document.getElementById('saveCustomWeek').style.display = 'none';
+      document.getElementById('saveLeagueMessage').style.display = 'none';
+      document.getElementById('confirmSaveLeagueBtn').disabled = false;
+      document.getElementById('confirmSaveLeagueBtn').textContent = 'Save to League';
+      updateSavePreview();
+      document.getElementById('saveLeagueModal').classList.remove('hidden');
+    }
+
+    function closeSaveLeagueModal() {
+      document.getElementById('saveLeagueModal').classList.add('hidden');
+    }
+
+    function getSaveWeekNumber() {
+      const weekType = document.getElementById('saveWeekType').value;
+      if (weekType === 'normal') return CONFIG.WEEK;
+      if (weekType === 'custom') return parseFloat(document.getElementById('saveCustomWeek').value) || CONFIG.WEEK;
+      return parseFloat(weekType);
+    }
+
+    function calculateScoresForSave() {
+      const allGamesDecided = CONFIG.GAMES.every((_, i) => winners[i]);
+      const picks = picksData.picks || {};
+      const scores = {};
+      const perfectWeekPoints = CONFIG.GAMES.length; // Number of games = perfect score (before bonus)
+
+      CONFIG.PLAYERS.forEach(player => {
+        const playerPicks = picks[player] || {};
+        let points = 0;
+        let correctCount = 0;
+
+        CONFIG.GAMES.forEach((game, i) => {
+          const pick = playerPicks[i];
+          const winner = winners[i];
+          const pts = game.doublePoints ? 2 : 1;
+
+          if (pick && winner && pick === winner) {
+            points += pts;
+            correctCount++;
+          }
+        });
+
+        // Full house bonus
+        if (allGamesDecided && correctCount === CONFIG.GAMES.length) {
+          points += CONFIG.FULL_HOUSE_BONUS;
+        }
+
+        scores[player] = points;
+      });
+
+      return { scores, perfectWeekPoints };
+    }
+
+    function updateSavePreview() {
+      const weekNumber = getSaveWeekNumber();
+      const { scores, perfectWeekPoints } = calculateScoresForSave();
+      
+      const preview = document.getElementById('savePreview');
+      preview.innerHTML = `
+        <div style="color: var(--gold); margin-bottom: 8px;">Week ${weekNumber} Data:</div>
+        <div style="color: var(--text-muted);">Scores: ${JSON.stringify(scores)}</div>
+        <div style="color: var(--text-muted); margin-top: 8px;">Perfect Week Points: ${perfectWeekPoints}</div>
+      `;
+    }
+
+    async function confirmSaveToLeague() {
+      const weekNumber = getSaveWeekNumber();
+      const { scores, perfectWeekPoints } = calculateScoresForSave();
+      const messageEl = document.getElementById('saveLeagueMessage');
+      const confirmBtn = document.getElementById('confirmSaveLeagueBtn');
+
+      // Check if SCORES_BIN_ID is configured
+      if (!CONFIG.SCORES_BIN_ID || CONFIG.SCORES_BIN_ID === 'YOUR_SCORES_BIN_ID_HERE') {
+        messageEl.innerHTML = `❌ <strong>SCORES_BIN_ID not configured!</strong><br><br>
+          1. Go to <a href="https://jsonbin.io" target="_blank" style="color: var(--gold);">jsonbin.io</a><br>
+          2. Create a new bin with this initial data:<br>
+          <code style="font-size: 0.75rem;">{"weeks":[],"config":{"perfectWeekPoints":{}}}</code><br>
+          3. Copy the Bin ID and paste it in CONFIG.SCORES_BIN_ID`;
+        messageEl.style.display = 'block';
+        messageEl.style.color = 'var(--red)';
+        return;
+      }
+
+      // Confirm
+      if (!confirm(`Save Week ${weekNumber} scores to your league table?`)) {
+        return;
+      }
+
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Saving...';
+
+      try {
+        // First, fetch existing league data
+        const getResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.SCORES_BIN_ID}/latest`, {
+          headers: { 'X-Access-Key': CONFIG.JSONBIN_API_KEY }
+        });
+
+        let leagueData = { weeks: [], config: { perfectWeekPoints: {} } };
+        
+        if (getResponse.ok) {
+          const data = await getResponse.json();
+          leagueData = data.record || leagueData;
+        }
+
+        // Ensure structure exists
+        if (!leagueData.weeks) leagueData.weeks = [];
+        if (!leagueData.config) leagueData.config = {};
+        if (!leagueData.config.perfectWeekPoints) leagueData.config.perfectWeekPoints = {};
+
+        // Update or add week scores
+        const existingWeekIndex = leagueData.weeks.findIndex(w => w.week === weekNumber);
+        const weekData = { week: weekNumber, scores: scores };
+
+        if (existingWeekIndex >= 0) {
+          leagueData.weeks[existingWeekIndex] = weekData;
+        } else {
+          leagueData.weeks.push(weekData);
+          // Sort weeks
+          leagueData.weeks.sort((a, b) => a.week - b.week);
+        }
+
+        // Update perfect week points
+        leagueData.config.perfectWeekPoints[String(weekNumber)] = perfectWeekPoints;
+
+        // Save back to JSONBin
+        const putResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.SCORES_BIN_ID}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Access-Key': CONFIG.JSONBIN_API_KEY
+          },
+          body: JSON.stringify(leagueData)
+        });
+
+        if (!putResponse.ok) {
+          throw new Error('Failed to save to JSONBin');
+        }
+
+        messageEl.innerHTML = `✅ <strong>Saved successfully!</strong><br><br>
+          Week ${weekNumber} scores are now live on your league table.<br>
+          Perfect week points updated to ${perfectWeekPoints}.`;
+        messageEl.style.display = 'block';
+        messageEl.style.color = 'var(--green)';
+        confirmBtn.textContent = 'Saved!';
+
+      } catch (err) {
+        console.error('Save error:', err);
+        messageEl.textContent = '❌ Error saving: ' + err.message;
+        messageEl.style.display = 'block';
+        messageEl.style.color = 'var(--red)';
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Save to League';
+      }
+    }
 
     function openResetModal() {
       document.getElementById('newWeekInput').value = CONFIG.WEEK + 1;
