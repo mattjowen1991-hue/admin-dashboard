@@ -1084,9 +1084,12 @@
       JSONBIN_API_KEY: '$2a$10$C7BY0Kl0u74gNn/kXO7xNuayWv493/f1jAxlHUmx3ENADQKDii61C',
       
       // JSONBin.io settings - LEAGUE SCORES (permanent, never reset)
-      SCORES_BIN_ID: '6951c2b0ae596e708fb6c625',
-      
-      // Admin PIN
+SCORES_BIN_ID: '6951c2b0ae596e708fb6c625',
+
+// JSONBin.io settings - PICKS HISTORY (permanent, never reset)
+PICKS_HISTORY_BIN_ID: '695317c4ae596e708fb8f9ec',
+
+// Admin PIN
       ADMIN_PIN: '292292',
       
       // Current week
@@ -1847,6 +1850,76 @@
       `;
     }
 
+    // Save picks history to permanent bin (for stats)
+async function savePicksHistory(weekNumber) {
+  try {
+    // Load existing history
+    let history = { weeks: [] };
+    try {
+      const response = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.PICKS_HISTORY_BIN_ID}/latest`, {
+        headers: { 'X-Access-Key': CONFIG.JSONBIN_API_KEY }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        history = data.record || { weeks: [] };
+      }
+    } catch (e) {
+      console.log('Starting fresh picks history');
+    }
+
+    // Build the week's picks data from current picksData and winners
+    const picks = picksData.picks || {};
+    const weekPicks = {
+      week: weekNumber,
+      games: CONFIG.GAMES.map((game, i) => ({
+        home: game.home,
+        away: game.away,
+        winner: winners[i] || '',
+        doublePoints: game.doublePoints || false,
+        picks: {}
+      }))
+    };
+
+    // Add each player's picks
+    CONFIG.PLAYERS.forEach(player => {
+      const playerPicks = picks[player] || {};
+      CONFIG.GAMES.forEach((game, i) => {
+        weekPicks.games[i].picks[player] = playerPicks[i] || 'missed';
+      });
+    });
+
+    // Check if this week already exists
+    const existingIndex = history.weeks.findIndex(w => w.week === weekNumber);
+
+    // Update or add
+    if (existingIndex >= 0) {
+      history.weeks[existingIndex] = weekPicks;
+    } else {
+      history.weeks.push(weekPicks);
+    }
+
+    // Sort by week number
+    history.weeks.sort((a, b) => a.week - b.week);
+
+    // Save back to JSONBin
+    const saveResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.PICKS_HISTORY_BIN_ID}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Access-Key': CONFIG.JSONBIN_API_KEY
+      },
+      body: JSON.stringify(history)
+    });
+
+    if (!saveResponse.ok) throw new Error('Failed to save picks history');
+    console.log('✅ Picks history saved');
+    return true;
+  } catch (err) {
+    console.error('❌ Error saving picks history:', err);
+    return false;
+  }
+}
+
     async function confirmSaveToLeague() {
       const weekNumber = getSaveWeekNumber();
       const { scores, perfectWeekPoints } = calculateScoresForSave();
@@ -1911,6 +1984,9 @@
         if (!putResponse.ok) {
           throw new Error('Failed to save to JSONBin');
         }
+
+        // Also save picks history for stats
+        await savePicksHistory(weekNumber);
 
         messageEl.innerHTML = `✅ <strong>Saved successfully!</strong><br><br>
           Week ${weekNumber} scores are now live on your league table.<br>
