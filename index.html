@@ -921,10 +921,16 @@
     <header class="header">
       <div>
         <h1>🏈 Admin Dashboard</h1>
-        <div class="api-status" id="apiStatus">
-          <span class="api-dot"></span>
-          <span>Checking scores API...</span>
-        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+  <div class="api-status" id="apiStatus">
+    <span class="api-dot"></span>
+    <span>Checking JSONBin...</span>
+  </div>
+  <div class="api-status" id="espnStatus">
+    <span class="api-dot"></span>
+    <span>ESPN Scores API</span>
+  </div>
+</div>
       </div>
       <div class="header-actions">
         <button class="btn btn-secondary" id="refreshBtn">↻ Refresh</button>
@@ -1308,6 +1314,7 @@ PICKS_HISTORY_BIN_ID: '695317c4ae596e708fb8f9ec',
     async function fetchLiveScores() {
       const statusEl = document.getElementById('apiStatus');
       statusEl.innerHTML = '<span class="api-dot"></span> Fetching scores...';
+      document.getElementById('espnStatus').innerHTML = '<span class="api-dot"></span> Fetching ESPN scores...';
 
       try {
         const response = await fetch(
@@ -1343,11 +1350,13 @@ PICKS_HISTORY_BIN_ID: '695317c4ae596e708fb8f9ec',
         localStorage.setItem(`nfl_winners_week_${CONFIG.WEEK}`, JSON.stringify(winners));
 
         statusEl.innerHTML = `<span class="api-dot connected"></span> Scores updated (${autoSetCount} winners auto-set)`;
+        document.getElementById('espnStatus').innerHTML = '<span class="api-dot connected"></span> ESPN API connected';
         renderDashboard();
 
       } catch (err) {
         console.error('Score fetch error:', err);
         statusEl.innerHTML = '<span class="api-dot error"></span> Could not fetch scores (set manually)';
+        document.getElementById('espnStatus').innerHTML = '<span class="api-dot error"></span> ESPN API error';
       }
     }
 
