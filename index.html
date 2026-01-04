@@ -878,6 +878,38 @@
     </div>
   </div>
 
+  <!-- Archive Season Modal -->
+<div class="modal-overlay hidden" id="archiveModal">
+  <div class="modal" style="max-width: 600px;">
+    <h2>🏆 Archive Season & Reset</h2>
+    <p style="color: var(--text-muted); margin-bottom: 20px;">This will save the entire season to the archives and reset everything for next season.</p>
+    
+    <div style="text-align: left; margin-bottom: 16px;">
+      <label style="display: block; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 8px;">Season Year</label>
+      <input type="number" id="archiveSeasonYear" min="2020" max="2030" placeholder="e.g., 2025" style="width: 100%; padding: 14px 16px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 1.2rem; text-align: center;">
+    </div>
+
+    <div id="archivePreview" style="text-align: left; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 16px; font-family: monospace; font-size: 0.75rem; max-height: 200px; overflow: auto;">
+      <div style="color: var(--gold); margin-bottom: 8px;">Loading preview...</div>
+    </div>
+
+    <div class="alert info" style="text-align: left; margin-bottom: 20px; font-size: 0.85rem;">
+      <strong>⚠️ This will:</strong><br>
+      • Save all player stats (points, rank, win rate, perfect weeks, best team, most picked) to archives<br>
+      • Save full weeks and picks history<br>
+      • Clear the scores bin for next season<br>
+      • Clear the picks history bin for next season
+    </div>
+    
+    <div style="display: flex; gap: 12px;">
+      <button class="btn btn-secondary" id="cancelArchiveBtn" style="flex: 1;">Cancel</button>
+      <button class="btn btn-primary" id="confirmArchiveBtn" style="flex: 1; background: linear-gradient(135deg, #9b59b6, #8e44ad);">Archive & Reset</button>
+    </div>
+    
+    <div id="archiveMessage" style="margin-top: 16px; display: none;"></div>
+  </div>
+</div>
+
   <!-- Save to League Table Modal -->
   <div class="modal-overlay hidden" id="saveLeagueModal">
     <div class="modal" style="max-width: 500px;">
@@ -938,6 +970,7 @@
         <button class="btn btn-primary" id="saveToLeagueBtn">💾 Save to League Table</button>
         <button class="btn btn-secondary" id="downloadJsonBtn">⬇ Download JSON</button>
         <button class="btn btn-danger" id="resetWeekBtn">🔄 Reset for New Week</button>
+        <button class="btn btn-secondary" id="archiveSeasonBtn" style="background: linear-gradient(135deg, #9b59b6, #8e44ad); border: none;">🏆 Archive Season</button>
       </div>
     </header>
 
@@ -1094,6 +1127,9 @@ SCORES_BIN_ID: '6951c2b0ae596e708fb6c625',
 
 // JSONBin.io settings - PICKS HISTORY (permanent, never reset)
 PICKS_HISTORY_BIN_ID: '695317c4ae596e708fb8f9ec',
+
+// JSONBin.io settings - SEASON ARCHIVES (historical data)
+ARCHIVES_BIN_ID: '695ae9bed0ea881f4054826e',
 
 // Admin PIN
       ADMIN_PIN: '292292',
@@ -2179,6 +2215,310 @@ async function savePicksHistory(weekNumber) {
         document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
       });
     });
+
+    // ============================================
+// ARCHIVE SEASON FUNCTIONS
+// ============================================
+
+document.getElementById('archiveSeasonBtn').addEventListener('click', openArchiveModal);
+document.getElementById('cancelArchiveBtn').addEventListener('click', closeArchiveModal);
+document.getElementById('confirmArchiveBtn').addEventListener('click', confirmArchiveSeason);
+document.getElementById('archiveModal').addEventListener('click', (e) => {
+  if (e.target.id === 'archiveModal') closeArchiveModal();
+});
+document.getElementById('archiveSeasonYear').addEventListener('input', updateArchivePreview);
+
+function openArchiveModal() {
+  const currentYear = new Date().getFullYear();
+  document.getElementById('archiveSeasonYear').value = currentYear;
+  document.getElementById('archiveMessage').style.display = 'none';
+  document.getElementById('confirmArchiveBtn').disabled = false;
+  document.getElementById('confirmArchiveBtn').textContent = 'Archive & Reset';
+  updateArchivePreview();
+  document.getElementById('archiveModal').classList.remove('hidden');
+}
+
+function closeArchiveModal() {
+  document.getElementById('archiveModal').classList.add('hidden');
+}
+
+async function updateArchivePreview() {
+  const previewEl = document.getElementById('archivePreview');
+  const seasonYear = document.getElementById('archiveSeasonYear').value;
+  
+  previewEl.innerHTML = '<div style="color: var(--text-muted);">Loading season data...</div>';
+  
+  try {
+    // Load scores data
+    const scoresResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.SCORES_BIN_ID}/latest`, {
+      headers: { 'X-Access-Key': CONFIG.JSONBIN_API_KEY }
+    });
+    const scoresData = scoresResponse.ok ? (await scoresResponse.json()).record : { weeks: [] };
+    
+    // Load picks history
+    const picksResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.PICKS_HISTORY_BIN_ID}/latest`, {
+      headers: { 'X-Access-Key': CONFIG.JSONBIN_API_KEY }
+    });
+    const picksData = picksResponse.ok ? (await picksResponse.json()).record : { weeks: [] };
+    
+    // Calculate standings
+    const standings = calculateSeasonStandings(scoresData, picksData);
+    
+    let html = `<div style="color: var(--gold); margin-bottom: 12px;">Season ${seasonYear} - ${scoresData.weeks?.length || 0} weeks played</div>`;
+    html += `<div style="color: var(--text-muted); margin-bottom: 8px;">Final Standings:</div>`;
+    
+    standings.forEach((player, index) => {
+      html += `<div style="margin-bottom: 4px;">
+        ${index + 1}. <span style="color: var(--text);">${capitalize(player.player)}</span> - 
+        <span style="color: var(--gold);">${player.points} pts</span>
+        (${player.winRate}% win rate, ${player.perfectWeeks} perfect weeks)
+      </div>`;
+    });
+    
+    previewEl.innerHTML = html;
+  } catch (err) {
+    previewEl.innerHTML = `<div style="color: var(--red);">Error loading preview: ${err.message}</div>`;
+  }
+}
+
+function calculateSeasonStandings(scoresData, picksData) {
+  const weeks = scoresData.weeks || [];
+  const picksWeeks = picksData.weeks || [];
+  const perfectWeekPoints = scoresData.config?.perfectWeekPoints || {};
+  
+  // Calculate totals for each player
+  const playerStats = {};
+  
+  CONFIG.PLAYERS.forEach(player => {
+    playerStats[player] = {
+      player: player,
+      points: 0,
+      perfectWeeks: 0,
+      correctPicks: 0,
+      totalPicks: 0,
+      teamPicks: {},    // { teamName: count }
+      teamCorrect: {}   // { teamName: correctCount }
+    };
+  });
+  
+  // Sum up points from all weeks
+  weeks.forEach(week => {
+    const maxPoints = perfectWeekPoints[String(week.week)];
+    
+    CONFIG.PLAYERS.forEach(player => {
+      const score = week.scores?.[player] || 0;
+      playerStats[player].points += score;
+      
+      // Check for perfect week
+      if (maxPoints && score === maxPoints) {
+        playerStats[player].perfectWeeks++;
+      }
+    });
+  });
+  
+  // Calculate pick accuracy from picks history
+  picksWeeks.forEach(week => {
+    (week.games || []).forEach(game => {
+      if (!game.winner) return;
+      
+      CONFIG.PLAYERS.forEach(player => {
+        const pick = game.picks?.[player];
+        if (!pick || pick === 'missed') return;
+        
+        playerStats[player].totalPicks++;
+        playerStats[player].teamPicks[pick] = (playerStats[player].teamPicks[pick] || 0) + 1;
+        
+        if (pick === game.winner) {
+          playerStats[player].correctPicks++;
+          playerStats[player].teamCorrect[pick] = (playerStats[player].teamCorrect[pick] || 0) + 1;
+        }
+      });
+    });
+  });
+  
+  // Calculate derived stats and build standings
+  const standings = CONFIG.PLAYERS.map(player => {
+    const stats = playerStats[player];
+    const winRate = stats.totalPicks > 0 
+      ? Math.round((stats.correctPicks / stats.totalPicks) * 100) 
+      : 0;
+    
+    // Find best team (most accurate with min 5 picks)
+    let bestTeam = null;
+    let bestTeamPct = 0;
+    Object.entries(stats.teamPicks).forEach(([team, count]) => {
+      if (count >= 5) {
+        const correct = stats.teamCorrect[team] || 0;
+        const pct = Math.round((correct / count) * 100);
+        if (pct > bestTeamPct) {
+          bestTeamPct = pct;
+          bestTeam = team;
+        }
+      }
+    });
+    
+    // Find most picked team
+    let mostPicked = null;
+    let mostPickedCount = 0;
+    Object.entries(stats.teamPicks).forEach(([team, count]) => {
+      if (count > mostPickedCount) {
+        mostPickedCount = count;
+        mostPicked = team;
+      }
+    });
+    
+    return {
+      player: player,
+      points: stats.points,
+      winRate: winRate,
+      perfectWeeks: stats.perfectWeeks,
+      correctPicks: stats.correctPicks,
+      totalPicks: stats.totalPicks,
+      bestTeam: bestTeam ? bestTeam.split(' ').pop() : null,
+      mostPicked: mostPicked ? mostPicked.split(' ').pop() : null,
+      mostPickedCount: mostPickedCount
+    };
+  });
+  
+  // Sort by points (descending)
+  standings.sort((a, b) => b.points - a.points);
+  
+  // Add ranks (handle ties)
+  let currentRank = 1;
+  standings.forEach((player, index) => {
+    if (index > 0 && player.points < standings[index - 1].points) {
+      currentRank = index + 1;
+    }
+    player.rank = currentRank;
+  });
+  
+  return standings;
+}
+
+async function confirmArchiveSeason() {
+  const seasonYear = document.getElementById('archiveSeasonYear').value;
+  const messageEl = document.getElementById('archiveMessage');
+  const confirmBtn = document.getElementById('confirmArchiveBtn');
+  
+  if (!seasonYear) {
+    messageEl.textContent = '❌ Please enter a season year';
+    messageEl.style.display = 'block';
+    messageEl.style.color = 'var(--red)';
+    return;
+  }
+  
+  if (!confirm(`Are you SURE you want to archive season ${seasonYear} and reset ALL data for next season?\n\nThis cannot be undone!`)) {
+    return;
+  }
+  
+  if (!confirm(`FINAL WARNING: This will clear all scores and picks data. Have you verified the preview looks correct?`)) {
+    return;
+  }
+  
+  confirmBtn.disabled = true;
+  confirmBtn.textContent = 'Archiving...';
+  
+  try {
+    // Load current data
+    const scoresResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.SCORES_BIN_ID}/latest`, {
+      headers: { 'X-Access-Key': CONFIG.JSONBIN_API_KEY }
+    });
+    const scoresData = scoresResponse.ok ? (await scoresResponse.json()).record : { weeks: [] };
+    
+    const picksResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.PICKS_HISTORY_BIN_ID}/latest`, {
+      headers: { 'X-Access-Key': CONFIG.JSONBIN_API_KEY }
+    });
+    const picksData = picksResponse.ok ? (await picksResponse.json()).record : { weeks: [] };
+    
+    // Calculate final standings
+    const standings = calculateSeasonStandings(scoresData, picksData);
+    
+    // Load existing archives
+    let archives = { seasons: {} };
+    try {
+      const archivesResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.ARCHIVES_BIN_ID}/latest`, {
+        headers: { 'X-Access-Key': CONFIG.JSONBIN_API_KEY }
+      });
+      if (archivesResponse.ok) {
+        archives = (await archivesResponse.json()).record || { seasons: {} };
+      }
+    } catch (e) {
+      console.log('Starting fresh archives');
+    }
+    
+    // Build archive entry
+    archives.seasons[seasonYear] = {
+      archivedAt: new Date().toISOString(),
+      weeks: scoresData.weeks || [],
+      picks: picksData.weeks || [],
+      config: scoresData.config || {},
+      standings: standings
+    };
+    
+    // Save archives
+    messageEl.textContent = '📦 Saving to archives...';
+    messageEl.style.display = 'block';
+    messageEl.style.color = 'var(--gold)';
+    
+    const archiveSaveResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.ARCHIVES_BIN_ID}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Access-Key': CONFIG.JSONBIN_API_KEY
+      },
+      body: JSON.stringify(archives)
+    });
+    
+    if (!archiveSaveResponse.ok) throw new Error('Failed to save archives');
+    
+    // Reset scores bin
+    messageEl.textContent = '🗑️ Resetting scores bin...';
+    
+    const resetScoresResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.SCORES_BIN_ID}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Access-Key': CONFIG.JSONBIN_API_KEY
+      },
+      body: JSON.stringify({ weeks: [], config: { perfectWeekPoints: {} } })
+    });
+    
+    if (!resetScoresResponse.ok) throw new Error('Failed to reset scores bin');
+    
+    // Reset picks history bin
+    messageEl.textContent = '🗑️ Resetting picks history bin...';
+    
+    const resetPicksResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.PICKS_HISTORY_BIN_ID}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Access-Key': CONFIG.JSONBIN_API_KEY
+      },
+      body: JSON.stringify({ weeks: [] })
+    });
+    
+    if (!resetPicksResponse.ok) throw new Error('Failed to reset picks history bin');
+    
+    messageEl.innerHTML = `✅ <strong>Season ${seasonYear} archived successfully!</strong><br><br>
+      • Standings saved with all player stats<br>
+      • Scores bin reset<br>
+      • Picks history bin reset<br><br>
+      <strong>Next steps:</strong><br>
+      1. Update config.json with new season year<br>
+      2. Update highlight winner/spoon when season ends<br>
+      3. Add winner to honorary list`;
+    messageEl.style.color = 'var(--green)';
+    confirmBtn.textContent = 'Done!';
+    
+  } catch (err) {
+    console.error('Archive error:', err);
+    messageEl.textContent = '❌ Error: ' + err.message;
+    messageEl.style.display = 'block';
+    messageEl.style.color = 'var(--red)';
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'Archive & Reset';
+  }
+}
 
     // ============================================
     // INIT
