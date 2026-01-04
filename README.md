@@ -706,6 +706,106 @@ Shows at-a-glance information:
 
 ---
 
+## 🏆 Archive Season System
+
+### Overview
+At the end of each NFL season, use the Archive Season feature to save all player stats to permanent storage and reset the system for the new season.
+
+### How to Archive a Season
+
+1. **Ensure all weeks are saved** - Make sure Week 18 (and any playoff weeks if tracked) have been saved to the league table using "Save to League Table"
+
+2. **Open Admin Dashboard** - Go to `admin-dashboard.html` and enter the PIN
+
+3. **Click "🏆 Archive Season"** (purple button in header)
+
+4. **Review the preview** - The modal will show:
+   - Number of weeks played
+   - Final standings with points, win rate, and perfect weeks
+   - Verify this looks correct before proceeding
+
+5. **Enter the season year** (e.g., 2025)
+
+6. **Confirm twice** - You'll get two confirmation prompts since this action cannot be undone
+
+### What Gets Archived
+
+For each player, the following stats are permanently saved:
+- **rank** - Final position (handles ties)
+- **points** - Total season points
+- **winRate** - Percentage of correct picks
+- **perfectWeeks** - Number of weeks with max score
+- **correctPicks** / **totalPicks** - Raw pick numbers
+- **bestTeam** - Most accurate team (min 5 picks required)
+- **mostPicked** - Most frequently picked team
+
+Full data also saved:
+- Complete `weeks` array (all weekly scores)
+- Complete `picks` array (all weekly picks with winners)
+- `config` object (perfectWeekPoints for each week)
+
+### What Gets Reset
+
+After archiving, these JSONBin bins are cleared for the new season:
+- **SCORES_BIN** → `{ weeks: [], config: { perfectWeekPoints: {} } }`
+- **PICKS_HISTORY_BIN** → `{ weeks: [] }`
+
+### JSONBin Structure
+
+**Archives Bin** (`695ae9bed0ea881f4054826e`):
+```json
+{
+  "seasons": {
+    "2025": {
+      "archivedAt": "2026-01-05T...",
+      "weeks": [...],
+      "picks": [...],
+      "config": { "perfectWeekPoints": {...} },
+      "standings": [
+        {
+          "player": "joe",
+          "rank": 1,
+          "points": 156,
+          "winRate": 68,
+          "perfectWeeks": 2,
+          "correctPicks": 142,
+          "totalPicks": 208,
+          "bestTeam": "Chiefs",
+          "mostPicked": "Lions",
+          "mostPickedCount": 18
+        },
+        ...
+      ]
+    },
+    "2024": { ... }
+  }
+}
+```
+
+### Post-Archive Checklist
+
+After archiving, you still need to manually:
+
+1. ☐ Update `config.json` with new season year
+2. ☐ Update the league table highlight for the winner
+3. ☐ Update the wooden spoon holder
+4. ☐ Add winner to the honorary winners list
+5. ☐ Update CONFIG in `admin-dashboard.html` for Week 1
+6. ☐ Update CONFIG in `player-picks.html` for Week 1
+
+### Viewing Archived Data
+
+Archived seasons can be accessed via the Archives JSONBin. Future enhancement: Add "Past Seasons" tab to player stats modal on the league table page.
+
+### Bin IDs Reference
+
+| Bin | ID | Purpose |
+|-----|-----|---------|
+| Weekly Picks | `69487a81ae596e708fa937cb` | Current week submissions (reset weekly) |
+| League Scores | `6951c2b0ae596e708fb6c625` | Season scores (reset at archive) |
+| Picks History | `695317c4ae596e708fb8f9ec` | Detailed picks (reset at archive) |
+| Archives | `695ae9bed0ea881f4054826e` | Permanent historical data |
+
 ## Support
 
 If something breaks or you need help:
