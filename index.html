@@ -1127,6 +1127,7 @@ SCORES_BIN_ID: '6951c2b0ae596e708fb6c625',
 
 // JSONBin.io settings - PICKS HISTORY (permanent, never reset)
 PICKS_HISTORY_BIN_ID: '695317c4ae596e708fb8f9ec',
+WEEKLY_PICKS_BIN_ID: '69487a81ae596e708fa937cb',
 
 // JSONBin.io settings - SEASON ARCHIVES (historical data)
 ARCHIVES_BIN_ID: '695ae9bed0ea881f4054826e',
@@ -2498,11 +2499,26 @@ async function confirmArchiveSeason() {
     });
     
     if (!resetPicksResponse.ok) throw new Error('Failed to reset picks history bin');
+
+    // Reset weekly picks bin
+    messageEl.textContent = '🗑️ Resetting weekly picks bin...';
+    
+    const resetWeeklyPicksResponse = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.WEEKLY_PICKS_BIN_ID}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Access-Key': CONFIG.JSONBIN_API_KEY
+      },
+      body: JSON.stringify({ week: 1, picks: {}, submissions: [] })
+    });
+    
+    if (!resetWeeklyPicksResponse.ok) throw new Error('Failed to reset weekly picks bin');
     
     messageEl.innerHTML = `✅ <strong>Season ${seasonYear} archived successfully!</strong><br><br>
       • Standings saved with all player stats<br>
       • Scores bin reset<br>
-      • Picks history bin reset<br><br>
+      • Picks history bin reset<br>
+      • Weekly picks bin reset<br><br>
       <strong>Next steps:</strong><br>
       1. Update config.json with new season year<br>
       2. Update highlight winner/spoon when season ends<br>
